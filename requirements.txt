@@ -1,0 +1,30 @@
+# SIGNAL — Live Stock Market Scanner
+
+Real-time stock scanner. No API keys needed to run.
+
+## Deploy to Render
+
+1. Fork this repo
+2. Go to render.com → New → Web Service → connect repo
+3. Render reads `render.yaml` automatically
+4. Click Deploy
+
+Optionally add `ANTHROPIC_API_KEY` in Render → Environment for AI text summaries.
+
+## Run locally
+
+```bash
+pip install -r requirements.txt
+python app.py
+# open http://localhost:5000
+```
+
+## Data sources
+
+| Source | Key needed? |
+|--------|------------|
+| Yahoo Finance (prices, fundamentals, technicals) | No |
+| Reddit public JSON (WSB mention scanning) | No |
+| Anthropic Claude (AI analysis text) | Optional |
+
+Not financial advice. All investments carry risk.

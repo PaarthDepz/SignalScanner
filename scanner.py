@@ -1,0 +1,9 @@
+flask>=3.0
+gunicorn>=21.0
+yfinance>=0.2.40
+pandas>=2.0
+numpy>=1.26
+ta>=0.11
+anthropic>=0.25
+python-dotenv>=1.0
+requests>=2.31
