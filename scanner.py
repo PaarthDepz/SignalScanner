@@ -367,7 +367,7 @@ def compute_fundamentals(info: dict) -> dict:
 # MOMENTUM SCORING  (options flow + Reddit + news volume)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def compute_momentum(ticker_str: str, tech: dict, reddit_data: reddit_data=None) -> dict:
+def compute_momentum(ticker_str, tech, reddit_data=None):
     """
     Compute momentum score from available signals.
     reddit_data: optional dict from get_reddit_trending for this ticker.
@@ -495,7 +495,7 @@ def compute_overall(mom_score, fund_score, tech_score):
 # FULL SINGLE-TICKER ANALYSIS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def analyze_ticker(ticker: str, reddit_map: reddit_data=None) -> dict:
+def analyze_ticker(ticker, reddit_map=None):
     """
     Full analysis for one ticker.
     reddit_map: optional dict of {ticker: reddit_data} from a prior scan.
