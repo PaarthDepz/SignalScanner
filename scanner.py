@@ -45,7 +45,7 @@ BLACKLIST = {
     "PM","AM","USD","US","USA","UK","EU","GDP","CPI","SEC","FED",
     "ATM","OTM","ITM","DCA","HODL","YOLO","FOMO","OP","RH","TD",
     "WS","PR","IR","ER","QE","RE","AS","HE","WE","MY","NO","ME",
-    "HI","OK","YO","SP","EV","VC","IPO","NFT","TLDR","EOD","EOW",
+    "HI","OK","YO","SP","EV","VC","NFT","TLDR","EOD","EOW",
 }
 
 TICKER_RE = re.compile(r'\b([A-Z]{2,5})\b')
@@ -65,12 +65,10 @@ BASE_WATCHLIST = [
 # REDDIT  (no API key needed)
 # ---------------------------------------------------------------------------
 
-def _fetch_sub_posts(subreddit, limit=100):
-    """Fetch posts from a subreddit via public JSON endpoint."""
+def _fetch_sub_posts(subreddit, limit=75):
     posts = []
     after = None
     fetched = 0
-
     while fetched < limit:
         url = "https://www.reddit.com/r/{}/new.json".format(subreddit)
         params = {"limit": min(100, limit - fetched), "raw_json": 1}
@@ -96,16 +94,10 @@ def _fetch_sub_posts(subreddit, limit=100):
             time.sleep(0.5)
         except Exception:
             break
-
     return posts
 
 
 def get_reddit_trending(limit_per_sub=75, top_n=20):
-    """
-    Scan investing subreddits for ticker mentions.
-    Returns list of dicts: {ticker, mentions, avg_upvotes, sample_posts}
-    No API key required.
-    """
     counts = Counter()
     titles = {}
     scores = {}
@@ -115,7 +107,6 @@ def get_reddit_trending(limit_per_sub=75, top_n=20):
             posts = _fetch_sub_posts(sub, limit=limit_per_sub)
         except Exception:
             continue
-
         for post in posts:
             title = post.get("title", "")
             body = post.get("selftext", "")
@@ -138,12 +129,10 @@ def get_reddit_trending(limit_per_sub=75, top_n=20):
                 continue
         except Exception:
             continue
-
         avg_upvotes = 0
         sc = scores.get(ticker, [])
         if sc:
             avg_upvotes = round(sum(sc) / len(sc), 1)
-
         sample = list(dict.fromkeys(titles.get(ticker, [])))[:3]
         results.append({
             "ticker": ticker,
@@ -153,7 +142,6 @@ def get_reddit_trending(limit_per_sub=75, top_n=20):
         })
         if len(results) >= top_n:
             break
-
     return results
 
 
@@ -162,13 +150,12 @@ def get_reddit_trending(limit_per_sub=75, top_n=20):
 # ---------------------------------------------------------------------------
 
 def compute_technicals(hist):
-    """Compute technical indicators from OHLCV DataFrame."""
     if hist is None or len(hist) < 30:
         return {"technical_score": 50}
 
-    close = hist["Close"].dropna()
-    high = hist["High"].dropna()
-    low = hist["Low"].dropna()
+    close  = hist["Close"].dropna()
+    high   = hist["High"].dropna()
+    low    = hist["Low"].dropna()
     volume = hist["Volume"].dropna()
 
     if len(close) < 20:
@@ -179,179 +166,221 @@ def compute_technicals(hist):
     out["price"] = round(price, 2)
 
     # Moving averages
+    ma50 = ma200 = None
     if len(close) >= 50:
         ma50 = float(close.rolling(50).mean().iloc[-1])
-        out["ma50"] = round(ma50, 2)
+        out["ma50"]    = round(ma50, 2)
         out["vs_ma50"] = round((price / ma50 - 1) * 100, 1)
-    else:
-        ma50 = None
-
     if len(close) >= 200:
         ma200 = float(close.rolling(200).mean().iloc[-1])
-        out["ma200"] = round(ma200, 2)
+        out["ma200"]    = round(ma200, 2)
         out["vs_ma200"] = round((price / ma200 - 1) * 100, 1)
-    else:
-        ma200 = None
 
     out["golden_cross"] = bool(ma50 and ma200 and ma50 > ma200)
-    out["death_cross"] = bool(ma50 and ma200 and ma50 < ma200)
+    out["death_cross"]  = bool(ma50 and ma200 and ma50 < ma200)
 
-    # 52-week range
+    # 52-week
     yr = close.tail(252)
-    out["week52_low"] = round(float(yr.min()), 2)
-    out["week52_high"] = round(float(yr.max()), 2)
-    out["pct_from_52high"] = round((price / float(yr.max()) - 1) * 100, 1)
+    out["week52_low"]       = round(float(yr.min()), 2)
+    out["week52_high"]      = round(float(yr.max()), 2)
+    out["pct_from_52high"]  = round((price / float(yr.max()) - 1) * 100, 1)
 
-    # Support / resistance (60-day)
+    # Support / resistance
     recent = close.tail(60)
-    out["support"] = round(float(recent.min()), 2)
+    out["support"]    = round(float(recent.min()), 2)
     out["resistance"] = round(float(recent.max()), 2)
 
     # Returns
-    if len(close) >= 6:
-        out["return_5d"] = round((price / float(close.iloc[-6]) - 1) * 100, 1)
-    if len(close) >= 22:
-        out["return_1mo"] = round((price / float(close.iloc[-22]) - 1) * 100, 1)
-    if len(close) >= 63:
-        out["return_3mo"] = round((price / float(close.iloc[-63]) - 1) * 100, 1)
+    def pct_ret(n):
+        if len(close) > n:
+            return round((price / float(close.iloc[-(n+1)]) - 1) * 100, 1)
+        return None
+
+    out["return_5d"]  = pct_ret(5)
+    out["return_1mo"] = pct_ret(21)
+    out["return_3mo"] = pct_ret(63)
 
     # Volume ratio
     if len(volume) >= 20:
-        avg_vol = float(volume.rolling(20).mean().iloc[-1])
+        avg_vol  = float(volume.rolling(20).mean().iloc[-1])
         last_vol = float(volume.iloc[-1])
         out["volume_ratio"] = round(last_vol / avg_vol, 2) if avg_vol > 0 else 1.0
 
-    # TA library indicators
+    # TA indicators
     if TA_AVAILABLE and len(close) >= 26:
         try:
-            rsi = ta.momentum.RSIIndicator(close, window=14).rsi()
-            out["rsi"] = round(float(rsi.iloc[-1]), 1)
+            rsi_val = ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-1]
+            if not math.isnan(rsi_val):
+                out["rsi"] = round(float(rsi_val), 1)
         except Exception:
             pass
 
         try:
             macd_obj = ta.trend.MACD(close)
-            out["macd"] = round(float(macd_obj.macd().iloc[-1]), 3)
-            out["macd_signal"] = round(float(macd_obj.macd_signal().iloc[-1]), 3)
-            out["macd_bullish"] = bool(out["macd"] > out["macd_signal"])
+            m  = float(macd_obj.macd().iloc[-1])
+            ms = float(macd_obj.macd_signal().iloc[-1])
+            if not math.isnan(m) and not math.isnan(ms):
+                out["macd"]        = round(m, 3)
+                out["macd_signal"] = round(ms, 3)
+                out["macd_bullish"] = bool(m > ms)
         except Exception:
             pass
 
         try:
             bb = ta.volatility.BollingerBands(close)
-            out["bb_upper"] = round(float(bb.bollinger_hband().iloc[-1]), 2)
-            out["bb_lower"] = round(float(bb.bollinger_lband().iloc[-1]), 2)
-            out["bb_pct"] = round(float(bb.bollinger_pband().iloc[-1]), 3)
+            bp = float(bb.bollinger_pband().iloc[-1])
+            if not math.isnan(bp):
+                out["bb_upper"] = round(float(bb.bollinger_hband().iloc[-1]), 2)
+                out["bb_lower"] = round(float(bb.bollinger_lband().iloc[-1]), 2)
+                out["bb_pct"]   = round(bp, 3)
         except Exception:
             pass
 
         try:
             stoch = ta.momentum.StochRSIIndicator(close)
-            out["stoch_rsi"] = round(float(stoch.stochrsi().iloc[-1]), 3)
+            sv = float(stoch.stochrsi().iloc[-1])
+            if not math.isnan(sv):
+                out["stoch_rsi"] = round(sv, 3)
         except Exception:
             pass
 
         try:
             wr = ta.momentum.WilliamsRIndicator(high, low, close)
-            out["williams_r"] = round(float(wr.williams_r().iloc[-1]), 1)
+            wv = float(wr.williams_r().iloc[-1])
+            if not math.isnan(wv):
+                out["williams_r"] = round(wv, 1)
         except Exception:
             pass
 
         try:
             atr = ta.volatility.AverageTrueRange(high, low, close)
-            out["atr"] = round(float(atr.average_true_range().iloc[-1]), 2)
+            av = float(atr.average_true_range().iloc[-1])
+            if not math.isnan(av):
+                out["atr"] = round(av, 2)
         except Exception:
             pass
 
-    # Score
+    # --- SCORE ---
     score = 50
-    rsi = out.get("rsi", 50)
-    if 30 < rsi < 60:
-        score += 10
-    elif 60 <= rsi < 70:
-        score += 15
-    elif rsi >= 70:
-        score += 5
-    elif rsi <= 30:
-        score -= 10
+    rsi = out.get("rsi")
+    if rsi is not None:
+        if 30 < rsi < 60:   score += 10
+        elif 60 <= rsi < 70: score += 15
+        elif rsi >= 70:      score += 5
+        elif rsi <= 30:      score -= 10
 
-    if out.get("macd_bullish"):
-        score += 10
-    if out.get("golden_cross"):
-        score += 10
-    if out.get("death_cross"):
-        score -= 15
-    if out.get("volume_ratio", 1) > 2:
-        score += 8
+    if out.get("macd_bullish") is True:  score += 10
+    if out.get("macd_bullish") is False: score -= 5
+    if out.get("golden_cross"):          score += 10
+    if out.get("death_cross"):           score -= 15
+
+    vol_ratio = out.get("volume_ratio", 1)
+    if vol_ratio > 3:     score += 12
+    elif vol_ratio > 2:   score += 8
+    elif vol_ratio > 1.5: score += 4
 
     bb_pct = out.get("bb_pct", 0.5)
-    if 0.2 < bb_pct < 0.8:
-        score += 5
+    if 0.2 < bb_pct < 0.8: score += 5
+    elif bb_pct >= 0.8:    score -= 3   # extended
 
-    if ma50 and price > ma50:
-        score += 8
-    if ma200 and price > ma200:
-        score += 7
+    vs50 = out.get("vs_ma50")
+    if vs50 is not None:
+        if vs50 > 0:    score += 8
+        else:           score -= 5
+
+    vs200 = out.get("vs_ma200")
+    if vs200 is not None:
+        if vs200 > 0:   score += 7
+        else:           score -= 8
 
     pct_high = out.get("pct_from_52high", 0)
-    if pct_high > -5:
-        score += 5
-    elif pct_high < -30:
-        score -= 8
+    if pct_high > -5:    score += 5
+    elif pct_high < -30: score -= 8
+
+    r1m = out.get("return_1mo") or 0
+    if r1m > 20:    score += 5
+    elif r1m < -15: score -= 5
 
     out["technical_score"] = max(0, min(100, score))
     return out
 
 
 # ---------------------------------------------------------------------------
-# FUNDAMENTALS
+# FUNDAMENTALS  — uses fast_info + income_stmt fallback
 # ---------------------------------------------------------------------------
 
-def compute_fundamentals(info):
-    """Extract fundamentals from yfinance info dict and score them."""
-    def safe(key):
-        val = info.get(key)
+def compute_fundamentals(ticker_str, info, tkr_obj):
+    """
+    Pull fundamentals from multiple yfinance sources for reliability.
+    info = tkr.info (may be empty), tkr_obj = yf.Ticker instance.
+    """
+    def safe(d, key):
+        val = d.get(key) if d else None
         if val is None:
             return None
         try:
             f = float(val)
-            if math.isnan(f) or math.isinf(f):
-                return None
-            return f
+            return None if (math.isnan(f) or math.isinf(f)) else f
         except Exception:
-            return val
+            return None
 
+    # Try fast_info for price-level data
+    fi = {}
+    try:
+        fast = tkr_obj.fast_info
+        fi = {
+            "market_cap":   getattr(fast, "market_cap", None),
+            "week52_high":  getattr(fast, "year_high", None),
+            "week52_low":   getattr(fast, "year_low", None),
+        }
+    except Exception:
+        pass
+
+    # Primary source: info dict
     out = {
-        "company":          info.get("longName") or info.get("shortName", ""),
+        "company":          info.get("longName") or info.get("shortName", ticker_str),
         "sector":           info.get("sector", ""),
         "industry":         info.get("industry", ""),
-        "market_cap":       safe("marketCap"),
-        "revenue_ttm":      safe("totalRevenue"),
-        "revenue_growth":   safe("revenueGrowth"),
-        "gross_margin":     safe("grossMargins"),
-        "operating_margin": safe("operatingMargins"),
-        "profit_margin":    safe("profitMargins"),
-        "eps_ttm":          safe("trailingEps"),
-        "eps_forward":      safe("forwardEps"),
-        "pe_trailing":      safe("trailingPE"),
-        "pe_forward":       safe("forwardPE"),
-        "peg_ratio":        safe("pegRatio"),
-        "price_to_book":    safe("priceToBook"),
-        "debt_equity":      safe("debtToEquity"),
-        "current_ratio":    safe("currentRatio"),
-        "free_cash_flow":   safe("freeCashflow"),
-        "cash":             safe("totalCash"),
-        "beta":             safe("beta"),
-        "week52_high":      safe("fiftyTwoWeekHigh"),
-        "week52_low":       safe("fiftyTwoWeekLow"),
-        "analyst_target":   safe("targetMeanPrice"),
-        "analyst_low":      safe("targetLowPrice"),
-        "analyst_high":     safe("targetHighPrice"),
-        "analyst_count":    safe("numberOfAnalystOpinions"),
+        "market_cap":       safe(info, "marketCap") or fi.get("market_cap"),
+        "revenue_ttm":      safe(info, "totalRevenue"),
+        "revenue_growth":   safe(info, "revenueGrowth"),
+        "gross_margin":     safe(info, "grossMargins"),
+        "operating_margin": safe(info, "operatingMargins"),
+        "profit_margin":    safe(info, "profitMargins"),
+        "eps_ttm":          safe(info, "trailingEps"),
+        "eps_forward":      safe(info, "forwardEps"),
+        "pe_trailing":      safe(info, "trailingPE"),
+        "pe_forward":       safe(info, "forwardPE"),
+        "peg_ratio":        safe(info, "pegRatio"),
+        "price_to_book":    safe(info, "priceToBook"),
+        "debt_equity":      safe(info, "debtToEquity"),
+        "current_ratio":    safe(info, "currentRatio"),
+        "free_cash_flow":   safe(info, "freeCashflow"),
+        "cash":             safe(info, "totalCash"),
+        "beta":             safe(info, "beta"),
+        "week52_high":      safe(info, "fiftyTwoWeekHigh") or fi.get("week52_high"),
+        "week52_low":       safe(info, "fiftyTwoWeekLow")  or fi.get("week52_low"),
+        "analyst_target":   safe(info, "targetMeanPrice"),
+        "analyst_low":      safe(info, "targetLowPrice"),
+        "analyst_high":     safe(info, "targetHighPrice"),
+        "analyst_count":    safe(info, "numberOfAnalystOpinions"),
         "recommendation":   info.get("recommendationKey", ""),
         "earnings_date":    None,
+        "dividend_yield":   safe(info, "dividendYield"),
     }
 
+    # Fallback: try income statement for revenue if missing
+    if out["revenue_ttm"] is None:
+        try:
+            inc = tkr_obj.income_stmt
+            if inc is not None and not inc.empty:
+                rev_row = inc.loc["Total Revenue"] if "Total Revenue" in inc.index else None
+                if rev_row is not None:
+                    out["revenue_ttm"] = float(rev_row.iloc[0])
+        except Exception:
+            pass
+
+    # Earnings date
     try:
         timestamps = info.get("earningsTimestamps") or []
         if timestamps:
@@ -360,10 +389,13 @@ def compute_fundamentals(info):
     except Exception:
         pass
 
-    # Score
+    # --- SCORE ---
     score = 50
+    signals_found = 0   # track how many signals we actually have
+
     rg = out.get("revenue_growth")
     if rg is not None:
+        signals_found += 1
         if rg > 0.30:   score += 20
         elif rg > 0.15: score += 12
         elif rg > 0.05: score += 5
@@ -371,40 +403,58 @@ def compute_fundamentals(info):
 
     gm = out.get("gross_margin")
     if gm is not None:
+        signals_found += 1
         if gm > 0.60:   score += 12
         elif gm > 0.35: score += 6
         elif gm < 0.10: score -= 8
 
     pm = out.get("profit_margin")
     if pm is not None:
+        signals_found += 1
         if pm > 0.20:   score += 10
         elif pm > 0.05: score += 5
         elif pm < 0:    score -= 10
 
     pe = out.get("pe_forward") or out.get("pe_trailing")
     if pe and pe > 0:
+        signals_found += 1
         if pe < 15:   score += 10
         elif pe < 25: score += 5
         elif pe > 80: score -= 5
 
     peg = out.get("peg_ratio")
     if peg and 0 < peg < 1.5:
+        signals_found += 1
         score += 8
 
     de = out.get("debt_equity")
     if de is not None:
+        signals_found += 1
         if de < 50:    score += 8
         elif de > 200: score -= 5
 
     fcf = out.get("free_cash_flow")
-    if fcf and fcf > 0:
-        score += 8
+    if fcf is not None:
+        signals_found += 1
+        if fcf > 0: score += 8
+        else:       score -= 5
 
     rec = (out.get("recommendation") or "").lower()
-    if "buy" in rec:  score += 8
-    elif "sell" in rec: score -= 8
+    if rec:
+        signals_found += 1
+        if "strong_buy" in rec: score += 12
+        elif "buy" in rec:      score += 8
+        elif "sell" in rec:     score -= 8
 
-    out["fundamentals_score"] = max(0, min(100, score))
+    # If we got very few signals, flag the score as unreliable
+    out["signals_found"] = signals_found
+    if signals_found < 3:
+        # Not enough data — return neutral with flag
+        out["fundamentals_score"] = 50
+        out["data_warning"] = "Limited data from Yahoo Finance"
+    else:
+        out["fundamentals_score"] = max(0, min(100, score))
+
     return out
 
 
@@ -413,7 +463,6 @@ def compute_fundamentals(info):
 # ---------------------------------------------------------------------------
 
 def compute_momentum(ticker_str, tech, reddit_data=None):
-    """Score momentum from options flow, Reddit, volume, and price action."""
     out = {}
     score = 50
 
@@ -426,8 +475,8 @@ def compute_momentum(ticker_str, tech, reddit_data=None):
             call_vol = int(chain.calls["volume"].fillna(0).sum())
             put_vol  = int(chain.puts["volume"].fillna(0).sum())
             cp_ratio = round(call_vol / max(put_vol, 1), 2)
-            out["call_volume"] = call_vol
-            out["put_volume"] = put_vol
+            out["call_volume"]    = call_vol
+            out["put_volume"]     = put_vol
             out["call_put_ratio"] = cp_ratio
             if cp_ratio > 2:     score += 15
             elif cp_ratio > 1.2: score += 8
@@ -447,7 +496,7 @@ def compute_momentum(ticker_str, tech, reddit_data=None):
         elif mentions > 5:   score += 2
     else:
         out["reddit_mentions"] = 0
-        out["reddit_posts"] = []
+        out["reddit_posts"]    = []
 
     # Volume
     vol_ratio = tech.get("volume_ratio", 1)
@@ -455,7 +504,7 @@ def compute_momentum(ticker_str, tech, reddit_data=None):
     elif vol_ratio > 2:   score += 8
     elif vol_ratio > 1.5: score += 4
 
-    # Price momentum
+    # 1-month return
     r1m = tech.get("return_1mo") or 0
     if r1m > 20:    score += 10
     elif r1m > 10:  score += 6
@@ -463,7 +512,7 @@ def compute_momentum(ticker_str, tech, reddit_data=None):
     elif r1m < -20: score -= 10
     elif r1m < -10: score -= 5
 
-    # Near 52-week high
+    # Distance from 52-week high
     pct = tech.get("pct_from_52high", -50)
     if pct > -5:    score += 8
     elif pct < -50: score -= 5
@@ -473,11 +522,10 @@ def compute_momentum(ticker_str, tech, reddit_data=None):
 
 
 # ---------------------------------------------------------------------------
-# AI ANALYSIS TEXT
+# AI TEXT
 # ---------------------------------------------------------------------------
 
 def get_ai_analysis(ticker, tech, fund, mom):
-    """Generate analysis text. Uses Claude if key available, else template."""
     if ANTHROPIC_AVAILABLE:
         try:
             client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
@@ -508,20 +556,19 @@ def get_ai_analysis(ticker, tech, fund, mom):
             return resp.content[0].text.strip()
         except Exception:
             pass
-
     return _template_analysis(ticker, tech, fund, mom)
 
 
 def _template_analysis(ticker, tech, fund, mom):
-    rsi    = tech.get("rsi", 50)
-    r1m    = tech.get("return_1mo") or 0
-    target = fund.get("analyst_target")
-    price  = tech.get("price") or 0
-    rec    = (fund.get("recommendation") or "hold").replace("_", " ").title()
-    upside = round((target / price - 1) * 100, 1) if (target and price) else None
+    rsi     = tech.get("rsi", 50)
+    r1m     = tech.get("return_1mo") or 0
+    target  = fund.get("analyst_target")
+    price   = tech.get("price") or 0
+    rec     = (fund.get("recommendation") or "hold").replace("_", " ").title()
+    upside  = round((target / price - 1) * 100, 1) if (target and price) else None
     rsi_str = "overbought" if rsi > 70 else "oversold" if rsi < 30 else "neutral"
-    trend = "bullish" if tech.get("golden_cross") else "bearish" if tech.get("death_cross") else "mixed"
-    parts = ["{} showing {} RSI ({}) with {} trend.".format(ticker, rsi_str, rsi, trend)]
+    trend   = "bullish" if tech.get("golden_cross") else "bearish" if tech.get("death_cross") else "mixed"
+    parts   = ["{} showing {} RSI ({}) with {} trend.".format(ticker, rsi_str, rsi, trend)]
     if r1m:
         parts.append("{:+.1f}% over the past month.".format(r1m))
     if upside and target:
@@ -530,7 +577,7 @@ def _template_analysis(ticker, tech, fund, mom):
 
 
 # ---------------------------------------------------------------------------
-# OVERALL SCORE
+# OVERALL
 # ---------------------------------------------------------------------------
 
 def compute_overall(mom_score, fund_score, tech_score):
@@ -538,17 +585,22 @@ def compute_overall(mom_score, fund_score, tech_score):
 
 
 # ---------------------------------------------------------------------------
-# SINGLE TICKER ANALYSIS
+# SINGLE TICKER
 # ---------------------------------------------------------------------------
 
 def analyze_ticker(ticker, reddit_map=None):
-    """Full analysis for one ticker. Returns dict ready for the API."""
     tkr  = yf.Ticker(ticker)
+
+    # Get info — yfinance can be flaky, retry once
     info = {}
-    try:
-        info = tkr.info or {}
-    except Exception:
-        pass
+    for attempt in range(2):
+        try:
+            info = tkr.info or {}
+            if info.get("regularMarketPrice") or info.get("currentPrice") or info.get("longName"):
+                break
+            time.sleep(1)
+        except Exception:
+            time.sleep(1)
 
     # History
     hist = None
@@ -561,21 +613,25 @@ def analyze_ticker(ticker, reddit_map=None):
         except Exception:
             continue
 
-    tech  = compute_technicals(hist)
-    fund  = compute_fundamentals(info)
-    rdata = (reddit_map or {}).get(ticker)
-    mom   = compute_momentum(ticker, tech, rdata)
-    setup = _build_trade_setup(tech, fund)
-    blurb = get_ai_analysis(ticker, tech, fund, mom)
-    overall = compute_overall(mom["momentum_score"], fund["fundamentals_score"], tech["technical_score"])
+    tech    = compute_technicals(hist)
+    fund    = compute_fundamentals(ticker, info, tkr)
+    rdata   = (reddit_map or {}).get(ticker)
+    mom     = compute_momentum(ticker, tech, rdata)
+    setup   = _build_trade_setup(tech, fund)
+    blurb   = get_ai_analysis(ticker, tech, fund, mom)
+    overall = compute_overall(
+        mom["momentum_score"],
+        fund["fundamentals_score"],
+        tech["technical_score"]
+    )
     tag, tag_color = _assign_tag(mom, fund, tech, overall)
 
     return {
-        "ticker":     ticker,
-        "name":       fund.get("company", ticker),
-        "sector":     fund.get("sector", ""),
-        "price":      tech.get("price"),
-        "change_1d":  tech.get("return_5d"),
+        "ticker":    ticker,
+        "name":      fund.get("company", ticker),
+        "sector":    fund.get("sector", ""),
+        "price":     tech.get("price"),
+        "change_1d": tech.get("return_5d"),
         "scores": {
             "momentum":     mom["momentum_score"],
             "fundamentals": fund["fundamentals_score"],
@@ -598,18 +654,14 @@ def analyze_ticker(ticker, reddit_map=None):
 # ---------------------------------------------------------------------------
 
 def run_top_picks_scan(include_reddit=False):
-    """
-    Score BASE_WATCHLIST tickers using Yahoo Finance.
-    Reddit scanning is optional (slow) — enabled via include_reddit=True.
-    """
-    reddit_map = {}
+    reddit_map    = {}
     extra_tickers = []
 
     if include_reddit:
         try:
             reddit_tickers = get_reddit_trending(limit_per_sub=50, top_n=15)
-            reddit_map = {r["ticker"]: r for r in reddit_tickers}
-            extra_tickers = [r["ticker"] for r in reddit_tickers]
+            reddit_map     = {r["ticker"]: r for r in reddit_tickers}
+            extra_tickers  = [r["ticker"] for r in reddit_tickers]
         except Exception as e:
             print("Reddit scan skipped: {}".format(e))
 
@@ -620,7 +672,7 @@ def run_top_picks_scan(include_reddit=False):
         try:
             data = analyze_ticker(ticker, reddit_map)
             results.append(data)
-            time.sleep(0.2)
+            time.sleep(0.5)   # slightly longer delay for reliability
         except Exception as e:
             print("Skipped {}: {}".format(ticker, e))
 
@@ -649,16 +701,11 @@ def _build_trade_setup(tech, fund):
     reward = abs(t1 - price)
     rr     = "{}:1".format(round(reward / risk, 1)) if risk > 0 else "N/A"
 
-    if rsi > 75:
-        bias = "WAIT FOR PULLBACK"
-    elif rsi < 30:
-        bias = "OVERSOLD — WATCH FOR REVERSAL"
-    elif tech.get("golden_cross") and tech.get("macd_bullish"):
-        bias = "BULLISH"
-    elif tech.get("death_cross"):
-        bias = "BEARISH — CAUTION"
-    else:
-        bias = "NEUTRAL"
+    if rsi > 75:     bias = "WAIT FOR PULLBACK"
+    elif rsi < 30:   bias = "OVERSOLD — WATCH FOR REVERSAL"
+    elif tech.get("golden_cross") and tech.get("macd_bullish"): bias = "BULLISH"
+    elif tech.get("death_cross"): bias = "BEARISH — CAUTION"
+    else:            bias = "NEUTRAL"
 
     return {
         "bias":  bias,
@@ -671,21 +718,15 @@ def _build_trade_setup(tech, fund):
 
 
 def _assign_tag(mom, fund, tech, overall):
-    rsi  = tech.get("rsi", 50)
-    r1m  = tech.get("return_1mo") or 0
-    rg   = fund.get("revenue_growth") or 0
-    cp   = mom.get("call_put_ratio") or 1
+    rsi = tech.get("rsi", 50)
+    r1m = tech.get("return_1mo") or 0
+    rg  = fund.get("revenue_growth") or 0
+    cp  = mom.get("call_put_ratio") or 1
 
-    if rsi > 70 and r1m > 15:
-        return "MOMENTUM",    "#00e87a"
-    if cp > 2.5:
-        return "OPTIONS FLOW","#f5c518"
-    if rg > 0.40:
-        return "HIGH GROWTH", "#38b6ff"
-    if overall >= 75:
-        return "STRONG BUY",  "#00e87a"
-    if overall >= 60:
-        return "BULLISH",     "#f5c518"
-    if overall < 40:
-        return "HIGH RISK",   "#ff8c42"
+    if rsi > 70 and r1m > 15:  return "MOMENTUM",    "#00e87a"
+    if cp > 2.5:               return "OPTIONS FLOW", "#f5c518"
+    if rg > 0.40:              return "HIGH GROWTH",  "#38b6ff"
+    if overall >= 75:          return "STRONG BUY",   "#00e87a"
+    if overall >= 60:          return "BULLISH",      "#f5c518"
+    if overall < 40:           return "HIGH RISK",    "#ff8c42"
     return "NEUTRAL", "#4a6380"
