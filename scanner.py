@@ -56,8 +56,8 @@ REDDIT_HEADERS = {
 }
 
 BASE_WATCHLIST = [
-    "AMD", "NVDA", "INTC", "MSFT", "AAPL", "META", "GOOGL", "AMZN",
-    "TSLA", "ONTO", "CRWV", "PLTR", "SOFI", "MSTR", "DVLT",
+    "AMD", "NVDA", "MSFT", "AAPL", "META",
+    "GOOGL", "AMZN", "TSLA", "INTC", "PLTR",
 ]
 
 
@@ -597,29 +597,30 @@ def analyze_ticker(ticker, reddit_map=None):
 # TOP PICKS SCAN
 # ---------------------------------------------------------------------------
 
-def run_top_picks_scan():
+def run_top_picks_scan(include_reddit=False):
     """
-    Scan Reddit for trending tickers, merge with watchlist,
-    score everything, return top 10 by overall score.
+    Score BASE_WATCHLIST tickers using Yahoo Finance.
+    Reddit scanning is optional (slow) — enabled via include_reddit=True.
     """
     reddit_map = {}
-    reddit_tickers = []
-    try:
-        reddit_tickers = get_reddit_trending(limit_per_sub=75, top_n=25)
-        reddit_map = {r["ticker"]: r for r in reddit_tickers}
-    except Exception as e:
-        print("Reddit scan skipped: {}".format(e))
+    extra_tickers = []
 
-    all_tickers = list(dict.fromkeys(
-        BASE_WATCHLIST + [r["ticker"] for r in reddit_tickers]
-    ))
+    if include_reddit:
+        try:
+            reddit_tickers = get_reddit_trending(limit_per_sub=50, top_n=15)
+            reddit_map = {r["ticker"]: r for r in reddit_tickers}
+            extra_tickers = [r["ticker"] for r in reddit_tickers]
+        except Exception as e:
+            print("Reddit scan skipped: {}".format(e))
+
+    all_tickers = list(dict.fromkeys(BASE_WATCHLIST + extra_tickers))[:20]
 
     results = []
-    for ticker in all_tickers[:35]:
+    for ticker in all_tickers:
         try:
             data = analyze_ticker(ticker, reddit_map)
             results.append(data)
-            time.sleep(0.3)
+            time.sleep(0.2)
         except Exception as e:
             print("Skipped {}: {}".format(ticker, e))
 
