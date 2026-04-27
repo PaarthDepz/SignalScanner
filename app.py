@@ -1,6 +1,3 @@
-“””
-SIGNAL - Live Stock Market Scanner
-“””
 import os
 import time
 import traceback
@@ -87,38 +84,31 @@ return jsonify({“ok”: False, “error”: SCANNER_ERROR}), 500
 try:
 import yfinance as yf
 import backtest as bt
-
-```
-    tkr = yf.Ticker(ticker)
-    hist = None
-    for period in ("5y", "3y", "2y"):
-        try:
-            h = tkr.history(period=period)
-            if len(h) >= 260:
-                hist = h
-                break
-        except Exception:
-            continue
-
-    if hist is None or len(hist) < 260:
-        return jsonify({"ok": False, "error": "Need at least 1 year of history"}), 400
-
-    info = {}
-    try:
-        info = tkr.info or {}
-    except Exception:
-        pass
-
-    fund = scanner.compute_fundamentals(ticker, info, tkr)
-    tech = scanner.compute_technicals(hist)
-    overall = scanner.compute_overall(50, fund["fundamentals_score"], tech["technical_score"])
-    report = bt.run_full_analysis(ticker, hist, fund, tech, overall)
-
-    set_cache("bt_" + ticker, report, ttl=BT_CACHE_TTL)
-    return jsonify({"ok": True, "data": report, "cached": False})
+tkr = yf.Ticker(ticker)
+hist = None
+for period in (“5y”, “3y”, “2y”):
+try:
+h = tkr.history(period=period)
+if len(h) >= 260:
+hist = h
+break
 except Exception:
-    return jsonify({"ok": False, "error": traceback.format_exc()}), 500
-```
+continue
+if hist is None or len(hist) < 260:
+return jsonify({“ok”: False, “error”: “Need at least 1 year of history”}), 400
+info = {}
+try:
+info = tkr.info or {}
+except Exception:
+pass
+fund = scanner.compute_fundamentals(ticker, info, tkr)
+tech = scanner.compute_technicals(hist)
+overall = scanner.compute_overall(50, fund[“fundamentals_score”], tech[“technical_score”])
+report = bt.run_full_analysis(ticker, hist, fund, tech, overall)
+set_cache(“bt_” + ticker, report, ttl=BT_CACHE_TTL)
+return jsonify({“ok”: True, “data”: report, “cached”: False})
+except Exception:
+return jsonify({“ok”: False, “error”: traceback.format_exc()}), 500
 
 @app.route(”/api/daytrading/<ticker>”)
 def api_daytrading(ticker):
@@ -146,10 +136,7 @@ return jsonify({“ok”: False, “error”: traceback.format_exc()}), 500
 
 @app.route(”/health”)
 def health():
-return jsonify({
-“status”: “ok” if SCANNER_OK else “scanner_error”,
-“scanner_error”: SCANNER_ERROR
-})
+return jsonify({“status”: “ok” if SCANNER_OK else “scanner_error”, “scanner_error”: SCANNER_ERROR})
 
 if **name** == “**main**”:
 port = int(os.environ.get(“PORT”, “5000”))
