@@ -10,6 +10,7 @@ Data sources:
 
 import os, re, time, math, requests
 from datetime import datetime, timedelta
+from typing import Optional, List
 from collections import Counter
 
 import yfinance as yf
@@ -50,7 +51,7 @@ REDDIT_HDRS = {
     "Accept": "application/json",
 }
 
-def _fetch_sub(subreddit: str, limit: int = 100) -> list[dict]:
+def _fetch_sub(subreddit: str, limit: int = 100) -> list:
     """
     Fetch recent posts from a subreddit using Reddit's public .json endpoint.
     No authentication required — Reddit allows read-only public access.
@@ -91,7 +92,7 @@ def _fetch_sub(subreddit: str, limit: int = 100) -> list[dict]:
     return posts
 
 
-def get_reddit_trending(limit_per_sub: int = 100, top_n: int = 20) -> list[dict]:
+def get_reddit_trending(limit_per_sub: int = 100, top_n: int = 20) -> list:
     """
     Scan recent posts across investing subreddits using public Reddit JSON.
     No API key needed.
@@ -366,7 +367,7 @@ def compute_fundamentals(info: dict) -> dict:
 # MOMENTUM SCORING  (options flow + Reddit + news volume)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def compute_momentum(ticker_str: str, tech: dict, reddit_data: dict | None = None) -> dict:
+def compute_momentum(ticker_str: str, tech: dict, reddit_data: reddit_data=None) -> dict:
     """
     Compute momentum score from available signals.
     reddit_data: optional dict from get_reddit_trending for this ticker.
@@ -494,7 +495,7 @@ def compute_overall(mom_score, fund_score, tech_score):
 # FULL SINGLE-TICKER ANALYSIS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def analyze_ticker(ticker: str, reddit_map: dict | None = None) -> dict:
+def analyze_ticker(ticker: str, reddit_map: reddit_data=None) -> dict:
     """
     Full analysis for one ticker.
     reddit_map: optional dict of {ticker: reddit_data} from a prior scan.
