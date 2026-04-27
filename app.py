@@ -24,7 +24,7 @@ app = Flask(**name**)
 
 _cache = {}
 CACHE_TTL = int(os.environ.get(“CACHE_TTL_SECONDS”, “300”))
-BT_CACHE_TTL = 3600  # 1 hour for backtest results
+BT_CACHE_TTL = 3600
 
 def get_cached(key):
 entry = _cache.get(key)
@@ -89,7 +89,7 @@ import yfinance as yf
 import backtest as bt
 
 ```
-    tkr  = yf.Ticker(ticker)
+    tkr = yf.Ticker(ticker)
     hist = None
     for period in ("5y", "3y", "2y"):
         try:
@@ -109,10 +109,10 @@ import backtest as bt
     except Exception:
         pass
 
-    fund    = scanner.compute_fundamentals(ticker, info, tkr)
-    tech    = scanner.compute_technicals(hist)
+    fund = scanner.compute_fundamentals(ticker, info, tkr)
+    tech = scanner.compute_technicals(hist)
     overall = scanner.compute_overall(50, fund["fundamentals_score"], tech["technical_score"])
-    report  = bt.run_full_analysis(ticker, hist, fund, tech, overall)
+    report = bt.run_full_analysis(ticker, hist, fund, tech, overall)
 
     set_cache("bt_" + ticker, report, ttl=BT_CACHE_TTL)
     return jsonify({"ok": True, "data": report, "cached": False})
@@ -122,7 +122,6 @@ except Exception:
 
 @app.route(”/api/daytrading/<ticker>”)
 def api_daytrading(ticker):
-“”“Day trading analysis: VWAP, intraday signals, ORB, RSI-2, backtest.”””
 ticker = ticker.upper().strip()
 cached = get_cached(“dt_” + ticker)
 if cached:
@@ -130,7 +129,7 @@ return jsonify({“ok”: True, “data”: cached, “cached”: True})
 try:
 import daytrader as dt
 data = dt.analyze_daytrading(ticker)
-set_cache(“dt_” + ticker, data, ttl=60)  # 1-min cache for intraday
+set_cache(“dt_” + ticker, data, ttl=60)
 return jsonify({“ok”: True, “data”: data, “cached”: False})
 except Exception:
 return jsonify({“ok”: False, “error”: traceback.format_exc()}), 500
