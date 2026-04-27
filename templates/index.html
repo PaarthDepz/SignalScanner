@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -82,6 +83,12 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .fade-in{animation:fadeUp .35s ease}
+.mode-toggle{display:flex;gap:0;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.mode-btn{border:none;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:2px;padding:9px 20px;transition:all .2s}
+.mode-btn.active-swing{background:var(--green);color:var(--bg)}
+.mode-btn.active-day{background:var(--orange);color:var(--bg)}
+.mode-btn.inactive{background:transparent;color:var(--muted)}
+.day-badge{display:inline-block;background:var(--orange);color:var(--bg);font-size:9px;letter-spacing:2px;padding:2px 7px;border-radius:2px;font-weight:700;vertical-align:middle;margin-left:6px}
 </style>
 </head>
 <body>
@@ -104,17 +111,22 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0
 </nav>
 
 <!-- HOME PAGE -->
+
 <div id="homePage">
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap;gap:14px">
     <div>
       <div class="section-label">LIVE MARKET SCAN — <span id="lastScanTime">NOT YET RUN</span></div>
-      <div style="font-size:28px;font-weight:700;line-height:1.2">
+      <div style="font-size:28px;font-weight:700;line-height:1.2" id="scanTitle">
         Real-time stock scanner<br><span style="color:var(--green)">with live data &amp; AI scoring</span>
       </div>
     </div>
-    <button class="btn btn-green" id="scanBtn" onclick="runScan()">
-      ▶ RUN LIVE SCAN
-    </button>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div class="mode-toggle">
+        <button class="mode-btn active-swing" id="modeSwing" onclick="setMode('swing')">⬆ SWING</button>
+        <button class="mode-btn inactive"     id="modeDay"   onclick="setMode('day')">⚡ DAY TRADE</button>
+      </div>
+      <button class="btn btn-green" id="scanBtn" onclick="runScan()">▶ RUN SCAN</button>
+    </div>
   </div>
 
   <div class="info-banner">
@@ -135,6 +147,7 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0
 </div>
 
 <!-- DETAIL PAGE -->
+
 <div id="detailPage" class="hidden">
   <button onclick="showHome()" style="background:transparent;border:1px solid var(--border);color:var(--muted-mid);padding:6px 16px;font-size:11px;letter-spacing:2px;cursor:pointer;border-radius:3px;font-family:inherit;margin-bottom:24px">← HOME</button>
   <div id="detailLoading" style="text-align:center;padding:60px 0;font-size:13px;color:var(--muted-light)">
@@ -451,6 +464,7 @@ function renderDetail(d) {
   html += '<button class="tab" onclick="switchTab(this,\'tab-fund-' + ticker + '\',\'active-fund\')">FUNDAMENTALS</button>';
   html += '<button class="tab" onclick="switchTab(this,\'tab-tech-' + ticker + '\',\'active-tech\')">TECHNICAL</button>';
   html += '<button class="tab" onclick="switchTab(this,\'tab-bt-' + ticker + '\',\'active-bt\');loadBacktest(\'' + ticker + '\')">BACKTEST ✦</button>';
+  html += '<button class="tab" onclick="switchTab(this,\'tab-dt-' + ticker + '\',\'active-dt\');loadDayTrading(\'' + ticker + '\')"><span style=\"color:var(--orange)\">⚡ DAY TRADE</span></button>';
   html += '</div>';
 
   // MOMENTUM TAB
@@ -520,6 +534,14 @@ function renderDetail(d) {
   html += '<div style="font-size:10px;margin-top:8px;color:var(--muted)">Replaying signals &amp; running 2,000 Monte Carlo simulations — takes ~5–15s</div>';
   html += '</div>';
   html += '<div id="bt-content-' + ticker + '" class="hidden"></div>';
+  html += '</div>';
+  // DAY TRADING TAB
+  html += '<div id="tab-dt-' + ticker + '" class="tab-content hidden">';
+  html += '<div id="dt-loading-' + ticker + '" style="text-align:center;padding:40px;color:var(--muted-light);font-size:12px">';
+  html += '<div class="spinner"></div> Fetching intraday data for ' + ticker + '...<br>';
+  html += '<div style="font-size:10px;margin-top:8px;color:var(--muted)">VWAP, ORB, RSI-2, intraday signals, backtest</div>';
+  html += '</div>';
+  html += '<div id="dt-content-' + ticker + '" class="hidden"></div>';
   html += '</div>';
 
   html += '<div class="disclaimer">⚠ NOT FINANCIAL ADVICE — live data from Yahoo Finance. All investments carry risk. Do your own research.</div>';
@@ -681,6 +703,200 @@ function renderBacktest(data, ticker, el) {
   el.innerHTML = html;
 }
 
+// ── mode toggle ──────────────────────────────────────────────────────────────
+var _mode = 'swing';
+
+function setMode(mode) {
+  _mode = mode;
+  var swingBtn = $('modeSwing');
+  var dayBtn   = $('modeDay');
+  var title    = $('scanTitle');
+  var scanBtn  = $('scanBtn');
+  var infoBanner = document.querySelector('.info-banner');
+
+  if (mode === 'day') {
+    swingBtn.className = 'mode-btn inactive';
+    dayBtn.className   = 'mode-btn active-day';
+    scanBtn.style.background = 'var(--orange)';
+    scanBtn.textContent = '⚡ SCAN DAY TRADES';
+    if (title) title.innerHTML = 'Day trading scanner<br><span style="color:var(--orange)">VWAP · ORB · RSI-2 · Intraday signals</span>';
+    if (infoBanner) infoBanner.innerHTML = '<span style="color:var(--orange)">⚡ DAY TRADE MODE</span>Intraday signals: VWAP, Opening Range Breakout, RSI-2, relative volume, gap plays. Uses 5-min candles from Yahoo Finance.';
+  } else {
+    swingBtn.className = 'mode-btn active-swing';
+    dayBtn.className   = 'mode-btn inactive';
+    scanBtn.style.background = 'var(--green)';
+    scanBtn.textContent = '▶ RUN SCAN';
+    if (title) title.innerHTML = 'Real-time stock scanner<br><span style="color:var(--green)">with live data &amp; AI scoring</span>';
+    if (infoBanner) infoBanner.innerHTML = '<span>ℹ LIVE DATA</span>Prices, technicals &amp; fundamentals from Yahoo Finance. Reddit scanned in real-time. Click any stock for full analysis including backtesting &amp; Monte Carlo price targets.';
+  }
+}
+
+// ── day trading loader ────────────────────────────────────────────────────────
+var _dtLoaded = {};
+
+async function loadDayTrading(ticker) {
+  if (_dtLoaded[ticker]) return;
+  _dtLoaded[ticker] = true;
+
+  var loadEl    = $('dt-loading-' + ticker);
+  var contentEl = $('dt-content-' + ticker);
+  if (!loadEl || !contentEl) return;
+
+  try {
+    var res  = await fetch('/api/daytrading/' + ticker);
+    var text = await res.text();
+    var json;
+    try { json = JSON.parse(text); }
+    catch(e) { throw new Error('Non-JSON: ' + text.slice(0,200)); }
+    if (!json.ok) throw new Error(json.error ? json.error.slice(0,400) : 'Day trading fetch failed');
+    renderDayTrading(json.data, ticker, contentEl);
+    loadEl.classList.add('hidden');
+    contentEl.classList.remove('hidden');
+  } catch(e) {
+    loadEl.innerHTML = '<div style="color:var(--red);font-size:12px;padding:16px">Error: ' + e.message.slice(0,300) + '</div>';
+  }
+}
+
+function renderDayTrading(data, ticker, el) {
+  var sig     = data.signals   || {};
+  var tgt     = data.targets   || {};
+  var bt      = data.backtest  || {};
+  var html    = '';
+  var oc      = data.bias_color || 'var(--orange)';
+
+  // Session + bias banner
+  html += '<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">';
+
+  html += '<div style="flex:1 1 130px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px">';
+  html += '<div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:6px">DAY TRADE SCORE</div>';
+  html += '<div style="font-size:32px;font-weight:900;color:' + oc + '">' + data.daytrading_score + '</div>';
+  html += '<div style="font-size:10px;color:var(--muted-light);margin-top:4px">/ 100</div></div>';
+
+  html += '<div style="flex:1 1 130px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px">';
+  html += '<div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:6px">BIAS</div>';
+  html += '<div style="font-size:16px;font-weight:900;color:' + oc + ';line-height:1.2">' + data.bias + '</div>';
+  html += '<div style="font-size:10px;color:var(--muted-light);margin-top:4px">' + (data.session||'') + '</div></div>';
+
+  html += '<div style="flex:1 1 130px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px">';
+  html += '<div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:6px">VWAP</div>';
+  html += '<div style="font-size:20px;font-weight:900;color:' + (sig.above_vwap?'var(--green)':'var(--red)') + '">$' + (sig.vwap||'—') + '</div>';
+  html += '<div style="font-size:10px;color:' + (sig.above_vwap?'var(--green)':'var(--red)') + ';margin-top:4px">' + (sig.above_vwap?'ABOVE':'BELOW') + ' VWAP ' + (sig.vs_vwap!=null?(sig.vs_vwap>0?'+':'')+sig.vs_vwap+'%':'') + '</div></div>';
+
+  html += '<div style="flex:1 1 130px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px">';
+  html += '<div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:6px">REL. VOLUME</div>';
+  var rvol = sig.relative_volume||0;
+  html += '<div style="font-size:20px;font-weight:900;color:' + (rvol>2?'var(--green)':rvol>1?'var(--yellow)':'var(--red)') + '">' + rvol + 'x</div>';
+  html += '<div style="font-size:10px;color:var(--muted-light);margin-top:4px">' + (rvol>2?'ELEVATED':rvol>1?'NORMAL':'LOW') + '</div></div>';
+
+  html += '</div>';
+
+  // Intraday signals grid
+  var sigItems = [
+    ['RSI-2',         sig.rsi_2!=null?sig.rsi_2:'—',          sig.rsi_2<20?'OVERSOLD':sig.rsi_2>80?'OVERBOUGHT':'NEUTRAL',       sig.rsi_2<20?'var(--green)':sig.rsi_2>80?'var(--red)':'var(--yellow)'],
+    ['RSI-5',         sig.rsi_5!=null?sig.rsi_5:'—',          sig.rsi_5<30?'OVERSOLD':sig.rsi_5>70?'OVERBOUGHT':'NEUTRAL',       sig.rsi_5<30?'var(--green)':sig.rsi_5>70?'var(--red)':'var(--yellow)'],
+    ['GAP %',         sig.gap_pct!=null?(sig.gap_pct>0?'+':'')+sig.gap_pct+'%':'—', sig.gap_pct>2?'GAP UP':sig.gap_pct<-2?'GAP DOWN':'FLAT',         sig.gap_pct>2?'var(--green)':sig.gap_pct<-2?'var(--red)':'var(--muted-light)'],
+    ['ORB HIGH',      sig.orb_high?'$'+sig.orb_high:'—',      sig.orb_breakout_up?'BREAKOUT!':sig.orb_breakdown?'BREAKDOWN':'INSIDE', sig.orb_breakout_up?'var(--green)':sig.orb_breakdown?'var(--red)':'var(--muted-light)'],
+    ['ORB LOW',       sig.orb_low?'$'+sig.orb_low:'—',        'OPENING RANGE', 'var(--muted-light)'],
+    ['EMA 5',         sig.ema5?'$'+sig.ema5:'—',              sig.ema5_above_10?'ABOVE EMA10':'BELOW EMA10', sig.ema5_above_10?'var(--green)':'var(--red)'],
+    ['1H TREND',      sig['1h_trend_pct']!=null?(sig['1h_trend_pct']>0?'+':'')+sig['1h_trend_pct']+'%':'—', sig['1h_trending_up']?'TRENDING UP':'TRENDING DOWN', sig['1h_trending_up']?'var(--green)':'var(--red)'],
+    ['LAST CANDLE',   sig.last_candle_bullish!=null?(sig.last_candle_doji?'DOJI':sig.last_candle_bullish?'BULLISH':'BEARISH'):'—', sig.last_candle_body_pct?sig.last_candle_body_pct+'% body':'', sig.last_candle_doji?'var(--yellow)':sig.last_candle_bullish?'var(--green)':'var(--red)'],
+    ['ATR (5m)',      tgt.atr_intraday?'$'+tgt.atr_intraday:'—', 'INTRADAY RANGE', 'var(--blue)'],
+    ['FLOAT',         data.float_shares?_fmtBigNum(data.float_shares):'—', data.float_shares&&data.float_shares<20e6?'LOW FLOAT':'', data.float_shares&&data.float_shares<20e6?'var(--orange)':'var(--muted-light)'],
+  ].filter(function(r){return r[1]&&r[1]!=='—';});
+
+  html += '<div style="margin-bottom:20px">';
+  html += '<div class="section-label">INTRADAY SIGNALS</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">';
+  sigItems.forEach(function(row) {
+    html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 13px">';
+    html += '<div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:5px">' + row[0] + '</div>';
+    html += '<div style="font-size:13px;font-weight:700;color:' + row[3] + '">' + row[1] + '</div>';
+    if (row[2]) html += '<div style="font-size:9px;color:var(--muted-light);margin-top:2px">' + row[2] + '</div>';
+    html += '</div>';
+  });
+  html += '</div></div>';
+
+  // Intraday targets
+  html += '<div style="margin-bottom:20px">';
+  html += '<div class="section-label">INTRADAY TRADE SETUPS</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+
+  // Long setup
+  html += '<div style="background:rgba(0,232,122,.05);border:1px solid rgba(0,232,122,.25);border-radius:4px;padding:14px">';
+  html += '<div style="font-size:9px;letter-spacing:2px;color:var(--green);margin-bottom:12px">▲ LONG SETUP</div>';
+  var longSetup = [
+    ['Entry (VWAP bounce)', tgt.long_entry_vwap_bounce?'$'+tgt.long_entry_vwap_bounce:'$'+sig.current_price, 'var(--green)'],
+    ['Entry (ORB break)',   tgt.orb_breakout_entry?'$'+tgt.orb_breakout_entry:'—', 'var(--green)'],
+    ['Stop (tight)',       tgt.long_stop_tight?'$'+tgt.long_stop_tight:'—', 'var(--red)'],
+    ['Stop (VWAP)',        tgt.long_stop_vwap?'$'+tgt.long_stop_vwap:'—', 'var(--red)'],
+    ['Target 1 (0.5x ATR)','$'+tgt.long_t1, 'var(--green)'],
+    ['Target 2 (1x ATR)',  '$'+tgt.long_t2, 'var(--green)'],
+    ['Target 3 (2x ATR)',  '$'+tgt.long_t3, 'var(--yellow)'],
+  ].filter(function(r){return r[1]&&r[1]!=='—';});
+  longSetup.forEach(function(r) {
+    html += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">';
+    html += '<span style="color:var(--muted-light)">' + r[0] + '</span>';
+    html += '<span style="color:' + r[2] + ';font-weight:700">' + r[1] + '</span></div>';
+  });
+  html += '</div>';
+
+  // Short setup
+  html += '<div style="background:rgba(255,69,96,.05);border:1px solid rgba(255,69,96,.25);border-radius:4px;padding:14px">';
+  html += '<div style="font-size:9px;letter-spacing:2px;color:var(--red);margin-bottom:12px">▼ SHORT SETUP</div>';
+  var shortSetup = [
+    ['Entry (VWAP reject)', tgt.vwap?'$'+Math.round(tgt.vwap*100)/100:'—', 'var(--red)'],
+    ['Entry (ORB fail)',    tgt.orb_stop?'$'+tgt.orb_stop:'—', 'var(--red)'],
+    ['Stop',               tgt.long_t1?'$'+tgt.long_t1:'—', 'var(--yellow)'],
+    ['Target 1 (0.5x ATR)','$'+tgt.short_t1, 'var(--red)'],
+    ['Target 2 (1x ATR)',  '$'+tgt.short_t2, 'var(--red)'],
+  ].filter(function(r){return r[1]&&r[1]!=='—';});
+  shortSetup.forEach(function(r) {
+    html += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">';
+    html += '<span style="color:var(--muted-light)">' + r[0] + '</span>';
+    html += '<span style="color:' + r[2] + ';font-weight:700">' + r[1] + '</span></div>';
+  });
+  html += '</div>';
+  html += '</div></div>';
+
+  // Backtest results
+  var btEntries = Object.entries(bt).filter(function(e){return e[0]!=='error'&&e[1]&&e[1].win_rate!=null;});
+  if (btEntries.length) {
+    btEntries.sort(function(a,b){return b[1].accuracy_score-a[1].accuracy_score;});
+    html += '<div style="margin-bottom:20px">';
+    html += '<div class="section-label">DAY TRADING STRATEGY BACKTEST</div>';
+    html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">';
+    html += '<div style="display:grid;grid-template-columns:1fr 55px 55px 65px 65px 55px;gap:4px;padding:8px 14px;border-bottom:1px solid var(--border);font-size:9px;letter-spacing:1px;color:var(--muted)">';
+    html += '<div>STRATEGY</div><div style="text-align:right">TRADES</div><div style="text-align:right">WIN%</div><div style="text-align:right">AVG RET</div><div style="text-align:right">PROF.FACTOR</div><div style="text-align:right">SCORE</div></div>';
+    btEntries.forEach(function(entry) {
+      var name = entry[0], s = entry[1];
+      var col  = s.accuracy_score>=60?'var(--green)':s.accuracy_score>=45?'var(--yellow)':'var(--red)';
+      html += '<div style="display:grid;grid-template-columns:1fr 55px 55px 65px 65px 55px;gap:4px;padding:8px 14px;border-bottom:1px solid var(--border);font-size:11px;align-items:center">';
+      html += '<div style="color:var(--muted-light)">' + (s.label||name.replace(/_/g,' ')) + '</div>';
+      html += '<div style="text-align:right;color:var(--muted-light)">' + s.total_trades + '</div>';
+      html += '<div style="text-align:right;font-weight:700;color:' + col + '">' + s.win_rate + '%</div>';
+      html += '<div style="text-align:right;color:' + col + '">' + (s.avg_return>0?'+':'') + s.avg_return + '%</div>';
+      html += '<div style="text-align:right;color:' + col + '">' + s.profit_factor + 'x</div>';
+      html += '<div style="text-align:right;font-weight:700;color:' + col + '">' + s.accuracy_score + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  html += '<div style="font-size:10px;color:var(--muted);line-height:1.8;padding:12px 0;border-top:1px solid var(--border)">';
+  html += '⚠ Day trading signals use 5-min Yahoo Finance data. VWAP resets daily. Backtest uses daily OHLCV as proxy for intraday — results are approximate. NOT FINANCIAL ADVICE. Day trading carries extreme risk of loss.';
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+
+function _fmtBigNum(n) {
+  if (!n) return '—';
+  if (n >= 1e9) return (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(0) + 'K';
+  return n.toString();
+}
+
 // ── tab switcher ──────────────────────────────────────────────────────────────
 function switchTab(btn, tabId, activeClass) {
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.add('hidden'); });
@@ -690,5 +906,6 @@ function switchTab(btn, tabId, activeClass) {
   btn.className = 'tab ' + activeClass;
 }
 </script>
+
 </body>
 </html>
