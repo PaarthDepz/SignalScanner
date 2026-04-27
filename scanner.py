@@ -15,6 +15,12 @@ import pandas as pd
 import numpy as np
 
 try:
+    import backtest as bt
+    BACKTEST_AVAILABLE = True
+except Exception:
+    BACKTEST_AVAILABLE = False
+
+try:
     import ta
     TA_AVAILABLE = True
 except Exception:
@@ -715,6 +721,26 @@ def analyze_ticker(ticker, reddit_map=None):
     )
     tag, tag_color = _assign_tag(mom, fund, tech, overall)
 
+    # Backtest + forward test (if enough history)
+    backtest_data = {}
+    price_targets = {}
+    calibrated_tech = tech["technical_score"]
+    if BACKTEST_AVAILABLE and hist is not None and len(hist) >= 260:
+        try:
+            bt_report      = bt.run_full_analysis(ticker, hist, fund, tech, overall)
+            backtest_data  = bt_report
+            price_targets  = bt_report.get("price_targets", {})
+            calibrated_tech = bt_report.get("calibrated_tech_score", calibrated_tech)
+            # Recompute overall with calibrated tech score
+            overall = compute_overall(
+                mom["momentum_score"],
+                fund["fundamentals_score"],
+                calibrated_tech
+            )
+            tag, tag_color = _assign_tag(mom, fund, tech, overall)
+        except Exception as e:
+            backtest_data = {"error": str(e)}
+
     return {
         "ticker":    ticker,
         "name":      fund.get("company", ticker),
@@ -724,7 +750,7 @@ def analyze_ticker(ticker, reddit_map=None):
         "scores": {
             "momentum":     mom["momentum_score"],
             "fundamentals": fund["fundamentals_score"],
-            "technical":    tech["technical_score"],
+            "technical":    calibrated_tech,
             "overall":      overall,
         },
         "tag":       tag,
@@ -734,6 +760,8 @@ def analyze_ticker(ticker, reddit_map=None):
         "fund":      fund,
         "mom":       mom,
         "setup":     setup,
+        "backtest":  backtest_data,
+        "price_targets": price_targets,
         "updatedAt": time.strftime("%H:%M:%S"),
     }
 
