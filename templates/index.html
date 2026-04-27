@@ -518,6 +518,7 @@ function renderDetail(d) {
     <button class="tab active-mom"  onclick="switchTab(this,'tab-mom', 'active-mom')">MOMENTUM</button>
     <button class="tab"             onclick="switchTab(this,'tab-fund','active-fund')">FUNDAMENTALS</button>
     <button class="tab"             onclick="switchTab(this,'tab-tech','active-tech')">TECHNICAL</button>
+    <button class="tab"             onclick="switchTab(this,'tab-bt',  'active-bt');  loadBacktest(ticker)">BACKTEST</button>
   </div>
 
   <!-- MOMENTUM TAB -->
@@ -589,16 +590,168 @@ function renderDetail(d) {
 }
 
 // ─── tab switcher ─────────────────────────────────────────────────────────────
-const TAB_ACTIVE = {
-  'tab-mom':  'active-mom',
-  'tab-fund': 'active-fund',
-  'tab-tech': 'active-tech',
-};
 function switchTab(btn, tabId, activeClass) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
   document.querySelectorAll('.tab').forEach(el => el.className = 'tab');
   $(tabId).classList.remove('hidden');
   btn.className = 'tab ' + activeClass;
+}
+
+// ─── backtest loader ──────────────────────────────────────────────────────────
+let _btLoaded = {};
+async function loadBacktest(ticker) {
+  if (_btLoaded[ticker]) return;
+  _btLoaded[ticker] = true;
+
+  const loadEl    = $('bt-loading-' + ticker);
+  const contentEl = $('bt-content-' + ticker);
+
+  try {
+    const res  = await fetch('/api/backtest/' + ticker);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Backtest failed');
+    renderBacktest(json.data, ticker, contentEl);
+    if (loadEl) loadEl.classList.add('hidden');
+    contentEl.classList.remove('hidden');
+  } catch(e) {
+    if (loadEl) loadEl.innerHTML = '<div style="color:var(--red);font-size:12px">Backtest error: ' + e.message.slice(0,200) + '</div>';
+  }
+}
+
+function renderBacktest(data, ticker, el) {
+  const bt   = data.backtest_results || {};
+  const pt   = data.price_targets    || {};
+  const mc   = pt.statistical        || {};
+  const tech = pt.technical          || {};
+  const fund = pt.fundamental        || {};
+  const active = data.active_signals || [];
+  const price  = pt.current_price;
+
+  // Signal accuracy table
+  const sigRows = Object.entries(bt).sort((a,b) => b[1].accuracy_score - a[1].accuracy_score).map(([name, s]) => {
+    const isActive = active.includes(name);
+    const col = s.accuracy_score >= 60 ? 'var(--green)' : s.accuracy_score >= 45 ? 'var(--yellow)' : 'var(--red)';
+    return \`<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border)">
+      <div style="width:8px;height:8px;border-radius:50%;background:\${isActive?'var(--green)':'var(--muted)'}"></div>
+      <div style="flex:1;font-size:11px;\${isActive?'color:var(--green);font-weight:700':'color:var(--muted-light)'}">\${name.replace(/_/g,' ').toUpperCase()}</div>
+      <div style="font-size:10px;color:var(--muted-light);min-width:50px;text-align:right">\${s.occurrences} hits</div>
+      <div style="font-size:11px;font-weight:700;color:\${col};min-width:40px;text-align:right">\${s.win_rate_1mo}%</div>
+      <div style="font-size:11px;color:\${col};min-width:55px;text-align:right">\${s.avg_return_1mo > 0 ? '+' : ''}\${s.avg_return_1mo}%</div>
+      <div style="font-size:11px;font-weight:700;color:\${col};min-width:35px;text-align:right">\${s.accuracy_score}</div>
+    </div>\`;
+  }).join('');
+
+  // Monte Carlo price targets
+  const mcRows = Object.entries(mc).map(([horizon, m]) => {
+    const upCol = m.expected_return >= 0 ? 'var(--green)' : 'var(--red)';
+    return \`<div style="display:grid;grid-template-columns:50px 1fr 1fr 1fr 1fr 1fr;gap:4px;padding:8px 14px;border-bottom:1px solid var(--border);font-size:11px;font-family:'Courier New',monospace">
+      <div style="color:var(--muted-light);font-weight:700">\${horizon.toUpperCase()}</div>
+      <div style="color:\${upCol}">\${m.expected_return > 0 ? '+' : ''}\${m.expected_return}%</div>
+      <div style="color:var(--green)">\$\${m.target_bull} <span style="font-size:9px;color:var(--muted)">BULL</span></div>
+      <div style="color:var(--text)">\$\${m.target_base} <span style="font-size:9px;color:var(--muted)">BASE</span></div>
+      <div style="color:var(--red)">\$\${m.target_bear} <span style="font-size:9px;color:var(--muted)">BEAR</span></div>
+      <div style="color:var(--blue)">\${m.prob_positive}% <span style="font-size:9px;color:var(--muted)">+VE</span></div>
+    </div>\`;
+  }).join('');
+
+  // Fundamental targets
+  const fundTargetRows = [
+    fund.fcf_target          ? \`<div class="row"><div class="lbl">FCF Yield Target</div><div class="val" style="color:var(--green)">\$\${fund.fcf_target} <span style="color:var(--muted);font-size:10px">(\${fund.fcf_upside > 0 ? '+' : ''}\${fund.fcf_upside}%)</span></div></div>\` : '',
+    fund.graham_number       ? \`<div class="row"><div class="lbl">Graham Number</div><div class="val" style="color:var(--yellow)">\$\${fund.graham_number} <span style="color:var(--muted);font-size:10px">(\${fund.graham_upside > 0 ? '+' : ''}\${fund.graham_upside}%)</span></div></div>\` : '',
+    fund.peg_fair_value      ? \`<div class="row"><div class="lbl">PEG Fair Value</div><div class="val" style="color:var(--blue)">\$\${fund.peg_fair_value} <span style="color:var(--muted);font-size:10px">(\${fund.peg_upside > 0 ? '+' : ''}\${fund.peg_upside}%)</span></div></div>\` : '',
+    fund.composite_fundamental_target ? \`<div class="row"><div class="lbl" style="font-weight:700">Composite Fundamental</div><div class="val" style="color:var(--purple)">\$\${fund.composite_fundamental_target} <span style="color:var(--muted);font-size:10px">(\${fund.composite_upside > 0 ? '+' : ''}\${fund.composite_upside}%)</span></div></div>\` : '',
+  ].filter(Boolean).join('');
+
+  el.innerHTML = \`
+    <!-- Calibrated score banner -->
+    <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+      <div style="flex:1 1 140px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:6px">CALIBRATED TECH SCORE</div>
+        <div style="font-size:28px;font-weight:900;color:var(--purple);font-family:'Courier New',monospace">\${data.calibrated_tech_score}</div>
+        <div style="font-size:10px;color:var(--muted-light);margin-top:4px">Adjusted by historical signal accuracy</div>
+      </div>
+      <div style="flex:1 1 140px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:6px">AVG SIGNAL ACCURACY</div>
+        <div style="font-size:28px;font-weight:900;color:var(--yellow);font-family:'Courier New',monospace">\${data.avg_signal_accuracy}%</div>
+        <div style="font-size:10px;color:var(--muted-light);margin-top:4px">Across \${Object.keys(bt).length} signals backtested</div>
+      </div>
+      <div style="flex:1 1 140px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:6px">ACTIVE SIGNALS</div>
+        <div style="font-size:28px;font-weight:900;color:var(--green);font-family:'Courier New',monospace">\${active.length}</div>
+        <div style="font-size:10px;color:var(--muted-light);margin-top:4px">\${active.map(s=>s.replace(/_/g,' ')).join(', ') || 'None'}</div>
+      </div>
+      \${pt.composite_target_1mo ? \`<div style="flex:1 1 140px;background:rgba(0,232,122,.07);border:1px solid rgba(0,232,122,.3);border-radius:4px;padding:12px 16px">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--green);margin-bottom:6px">COMPOSITE TARGET (1MO)</div>
+        <div style="font-size:28px;font-weight:900;color:var(--green);font-family:'Courier New',monospace">\$\${pt.composite_target_1mo}</div>
+        <div style="font-size:10px;color:var(--muted-light);margin-top:4px">\${pt.composite_upside_1mo > 0 ? '+' : ''}\${pt.composite_upside_1mo}% from current price</div>
+      </div>\` : ''}
+    </div>
+
+    <!-- Signal accuracy table -->
+    <div style="margin-bottom:20px">
+      <div class="section-label">SIGNAL BACKTEST RESULTS <span style="color:var(--muted);font-weight:normal">(● = currently active)</span></div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+        <div style="display:flex;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);font-size:9px;letter-spacing:2px;color:var(--muted)">
+          <div style="width:8px"></div>
+          <div style="flex:1">SIGNAL</div>
+          <div style="min-width:50px;text-align:right">HITS</div>
+          <div style="min-width:40px;text-align:right">WIN %</div>
+          <div style="min-width:55px;text-align:right">AVG RET</div>
+          <div style="min-width:35px;text-align:right">SCORE</div>
+        </div>
+        \${sigRows || '<div style="padding:16px;color:var(--muted);font-size:12px">No backtest data</div>'}
+      </div>
+    </div>
+
+    <!-- Monte Carlo price targets -->
+    \${mcRows ? \`<div style="margin-bottom:20px">
+      <div class="section-label">MONTE CARLO PRICE TARGETS (2,000 SIMULATIONS)</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:50px 1fr 1fr 1fr 1fr 1fr;gap:4px;padding:8px 14px;border-bottom:1px solid var(--border);font-size:9px;letter-spacing:2px;color:var(--muted)">
+          <div>PERIOD</div><div>EXP RET</div><div>BULL 75%</div><div>BASE 50%</div><div>BEAR 25%</div><div>P(+VE)</div>
+        </div>
+        \${mcRows}
+      </div>
+    </div>\` : ''}
+
+    <!-- Fundamental targets -->
+    \${fundTargetRows ? \`<div style="margin-bottom:20px">
+      <div class="section-label">FUNDAMENTAL PRICE TARGETS</div>
+      <div class="data-table" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+        \${fundTargetRows}
+      </div>
+    </div>\` : ''}
+
+    <!-- Technical S/R levels from backtest -->
+    \${tech.r1 ? \`<div style="margin-bottom:20px">
+      <div class="section-label">PIVOT POINTS & ATR TARGETS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px">
+          <div style="font-size:9px;letter-spacing:2px;color:var(--red);margin-bottom:10px">▲ RESISTANCE</div>
+          \${[['R3',tech.r3],['R2',tech.r2],['R1',tech.r1],['PIVOT',tech.pivot]].map(([l,v])=>v?
+            \`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px">
+              <span style="color:var(--muted-light)">\${l}</span>
+              <span style="color:var(--red);font-family:'Courier New',monospace">\$\${v}</span>
+            </div>\`:''
+          ).join('')}
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px">
+          <div style="font-size:9px;letter-spacing:2px;color:var(--green);margin-bottom:10px">▼ SUPPORT & TARGETS</div>
+          \${[['S1',tech.s1],['S2',tech.s2],['S3',tech.s3],['ATR T1',tech.t1_technical],['ATR T2',tech.t2_technical],['ATR T3',tech.t3_technical]].map(([l,v])=>v?
+            \`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px">
+              <span style="color:var(--muted-light)">\${l}</span>
+              <span style="color:var(--green);font-family:'Courier New',monospace">\$\${v}</span>
+            </div>\`:''
+          ).join('')}
+        </div>
+      </div>
+    </div>\` : ''}
+
+    <div style="font-size:10px;color:var(--muted);line-height:1.8;padding:12px 0;border-top:1px solid var(--border)">
+      ⚠ Backtest results show historical performance of signals on this specific stock. Past accuracy does not guarantee future results.
+      Monte Carlo uses 2,000 bootstrap simulations from historical return distribution. NOT FINANCIAL ADVICE.
+    </div>
+  \`;
 }
 </script>
 </body>
