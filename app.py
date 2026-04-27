@@ -46,6 +46,7 @@ def index():
 
 @app.route("/api/scan", methods=["POST"])
 def api_scan():
+    """Fast scan — Yahoo Finance only, no Reddit."""
     if not SCANNER_OK:
         return jsonify({"ok": False, "error": SCANNER_ERROR}), 500
     try:
@@ -57,6 +58,7 @@ def api_scan():
 
 @app.route("/api/scan/reddit", methods=["POST"])
 def api_scan_reddit():
+    """Full scan including Reddit mention data."""
     if not SCANNER_OK:
         return jsonify({"ok": False, "error": SCANNER_ERROR}), 500
     try:
@@ -68,6 +70,7 @@ def api_scan_reddit():
 
 @app.route("/api/ticker/<ticker>")
 def api_ticker(ticker):
+    """Full analysis for a single ticker including backtest."""
     if not SCANNER_OK:
         return jsonify({"ok": False, "error": SCANNER_ERROR}), 500
     ticker = ticker.upper().strip()
@@ -78,6 +81,60 @@ def api_ticker(ticker):
         data = scanner.analyze_ticker(ticker)
         set_cache(ticker, data)
         return jsonify({"ok": True, "data": data, "cached": False})
+    except Exception:
+        return jsonify({"ok": False, "error": traceback.format_exc()}), 500
+
+
+@app.route("/api/backtest/<ticker>")
+def api_backtest(ticker):
+    """
+    Run full backtest + Monte Carlo forward test for a ticker.
+    Cached separately with longer TTL (1hr) since it's expensive.
+    """
+    if not SCANNER_OK:
+        return jsonify({"ok": False, "error": SCANNER_ERROR}), 500
+
+    ticker = ticker.upper().strip()
+    cache_key = "bt_" + ticker
+    cached = get_cached(cache_key)
+    if cached:
+        return jsonify({"ok": True, "data": cached, "cached": True})
+
+    try:
+        import yfinance as yf
+        import backtest as bt
+
+        tkr  = yf.Ticker(ticker)
+        hist = None
+        for period in ("5y", "3y", "2y"):
+            try:
+                h = tkr.history(period=period)
+                if len(h) >= 260:
+                    hist = h
+                    break
+            except Exception:
+                continue
+
+        if hist is None or len(hist) < 260:
+            return jsonify({"ok": False, "error": "Need at least 1 year of history"}), 400
+
+        info = {}
+        try:
+            info = tkr.info or {}
+        except Exception:
+            pass
+
+        # Get fund and tech for context
+        fund  = scanner.compute_fundamentals(ticker, info, tkr)
+        tech  = scanner.compute_technicals(hist)
+
+        overall = scanner.compute_overall(50, fund["fundamentals_score"], tech["technical_score"])
+        report  = bt.run_full_analysis(ticker, hist, fund, tech, overall)
+
+        # Cache for 1 hour
+        _cache[cache_key] = {"data": report, "ts": time.time() + 3300}
+        return jsonify({"ok": True, "data": report, "cached": False})
+
     except Exception:
         return jsonify({"ok": False, "error": traceback.format_exc()}), 500
 
